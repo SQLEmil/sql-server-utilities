@@ -2645,7 +2645,8 @@ set @edmxPresentationStatement  =   N'<?xml version="1.0" encoding="utf-8"?>'
                                     + @lineEnd
 	                                + N'<edmx:Edmx Version="3.0" xmlns:edmx="http://schemas.microsoft.com/ado/2009/11/edmx">'
                                     --
-                                    + N'<!-- This CSDL Schema was automatically generated based on table definitions in '
+                                    + @lineEnd
+	                            + N'<!-- This .edmx document was automatically generated based on table definitions in '
                                     + @databaseName
                                     + N' on '
                                     + @@SERVERNAME
