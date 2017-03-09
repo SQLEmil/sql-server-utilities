@@ -154,6 +154,12 @@ declare @objectId                           int,
         @ssdlFunctions                      nvarchar(max)   = N'', -- holds all SSDL Function definitions
         @mslEntitySetMappings               nvarchar(max)   = N'', -- holds all MSL EntitySetMapping definitions
         @edmxPresentationStatement          nvarchar(max)   = N'', -- holds .edmx file for final return
+        @ssdlContent                        nvarchar(max)   = N'',
+        @ssdlFunctionToken                  nvarchar(31)    = N'<!-- SSDL Functions go here -->', -- simplifies replacement operations
+        @csdlContent                        nvarchar(max)   = N'',
+        @mslContent                         nvarchar(max)   = N'',
+        @emdxHeader                         nvarchar(max)   = N'',
+        @edmxFooter                         nvarchar(max)   = N'',
         @executionStart                     datetime2(7)    = SYSUTCDATETIME(),
         @executionEnd                       datetime2(7);
 
@@ -1482,6 +1488,12 @@ begin;
                                                             + REPLICATE(@tabSpace, 2)
                                                             + ', '
                                                             + QUOTENAME([name], '[')
+                                                            + N' = @'
+                                                            + [name]
+                                                            /*
+                                                            -- This version of the code will give you CASE
+                                                            -- statements for additional validation or
+                                                            -- transformation if desired.
                                                             + N' = CASE'
                                                             + @lineEnd
                                                             + REPLICATE(@tabSpace, 4)
@@ -1497,6 +1509,7 @@ begin;
                                                             + @lineEnd
                                                             + REPLICATE(@tabSpace, 3)
                                                             + N'END'
+                                                            */
                                                 from        @columnInfo
                                                 where       isInsertParameter = CAST(1 as bit)
                                                 order by    [columnId]
@@ -1794,6 +1807,12 @@ begin;
                                                             + REPLICATE(@tabSpace, 2)
                                                             + ', '
                                                             + QUOTENAME([name], '[')
+                                                            + N' = @'
+                                                            + [name]
+                                                            /*
+                                                            -- This version of the code will give you CASE
+                                                            -- statements for additional validation or
+                                                            -- transformation if desired.
                                                             + N' = CASE'
                                                             + @lineEnd
                                                             + REPLICATE(@tabSpace, 4)
@@ -1809,8 +1828,11 @@ begin;
                                                             + @lineEnd
                                                             + REPLICATE(@tabSpace, 3)
                                                             + N'END'
+                                                            */
                                                 from        @columnInfo
                                                 where       [isUpdateParameter] = CAST(1 as bit)
+                                                            and
+                                                            [isIdentity] = CAST(0 as bit)
                                                 order by    [columnId]
                                                 for xml path('')
                                             ) -- end of SELECT
@@ -2237,7 +2259,8 @@ begin;
                                 + QUOTENAME(@databaseAbstractionSchema, N'[')
                                 + N'.'
                                 + QUOTENAME(@coveringViewName, N'[')
-                                + N';'
+                                -- We do not end this SELECT statement with a semicolon because of the ways Entity
+                                -- Framework makes use of this query in creating other SQL statements.
                                 --
                                 + @lineEnd
                                 + @tab
@@ -2640,329 +2663,381 @@ deallocate tableCursor;
 --////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 -- Build .edmx from XML components
 --\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
-set @edmxPresentationStatement  =   N'<?xml version="1.0" encoding="utf-8"?>'
-                                    --
-                                    + @lineEnd
-	                                + N'<edmx:Edmx Version="3.0" xmlns:edmx="http://schemas.microsoft.com/ado/2009/11/edmx">'
-                                    --
-                                    + @lineEnd
-	                            + N'<!-- This .edmx document was automatically generated based on table definitions in '
-                                    + @databaseName
-                                    + N' on '
-                                    + @@SERVERNAME
-                                    + N' as of '
-                                    + CONVERT(nvarchar(27), @executionStart, 121)
-                                    + N' UTC by '
-                                    + ORIGINAL_LOGIN()
-                                    + N'. -->'
-                                    --
-                                    + @lineEnd
-                                    + @tab
-	                                + N'<!-- EF Runtime content -->'
-                                    --
-                                    + @lineEnd
-	                                + @tab
-	                                + N'<edmx:Runtime>'
-                                    ------------------------------------------------------------------------------
-                                    -- SSDL
-                                    ------------------------------------------------------------------------------
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 2)
-                                    + N'<!-- SSDL content -->'
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 2)
-                                    + N'<edmx:StorageModels>'
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 3)
-                                    + N'<Schema Namespace="'
-                                    + @databaseName
-                                    -- ProviderManifestToken sets the SQL Server version
-                                    + N'Model.Store" Provider="System.Data.SqlClient" ProviderManifestToken="'
-                                    + @sqlServerVersionToken
-                                    + '" Alias="Self"'
-                                    + N' xmlns:store="http://schemas.microsoft.com/ado/2007/12/edm/EntityStoreSchemaGenerator"'
-                                    + N' xmlns:customannotation="http://schemas.microsoft.com/ado/2013/11/edm/customannotation"'
-                                    + N' xmlns="http://schemas.microsoft.com/ado/2009/11/edm/ssdl">'
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 4)
-                                    -- We replace each line end with a line end plus extra tabs to nest code properly
-                                    + REPLACE(SUBSTRING(@ssdlEntityTypes
-                                            , 1, LEN(@ssdlEntityTypes) - LEN(@lineEnd)
-                                            ) -- end of SUBSTRING
-                                        , @lineEnd, @lineEnd + REPLICATE(@tab, 4)
-                                        ) -- end of REPLACE
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 4)
-                                    + N'<EntityContainer Name="store_'
-                                    + @databaseName
-                                    + N'StoreContainer">'
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 5)
-                                    + REPLACE(SUBSTRING(@ssdlEntitySets
-                                            , 1, LEN(@ssdlEntitySets) - LEN(@lineEnd)
-                                            ) -- end of SUBSTRING
-                                        , @lineEnd, @lineEnd + REPLICATE(@tab, 5)
-                                        ) -- end of REPLACE
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 4)
-                                    + N'</EntityContainer>'
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 4)
-                                    -- We replace each line end with a line end plus extra tabs to nest code properly
-                                    + REPLACE(SUBSTRING(@ssdlFunctions
-                                            , 1, LEN(@ssdlFunctions) - LEN(@lineEnd)
-                                            )
-                                        , @lineEnd, @lineEnd + REPLICATE(@tab, 4)
-                                        )
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 3)
-                                    + N'</Schema>'
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 2)
-                                    + N'</edmx:StorageModels>'
-                                    ------------------------------------------------------------------------------
-                                    -- CSDL
-                                    ------------------------------------------------------------------------------
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 2)
-                                    + N'<!-- CSDL content -->'
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 2)
-                                    + N'<edmx:ConceptualModels>'
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 3)
-                                    + N'<Schema Namespace="'
-                                    + @databaseName
-                                    -- ProviderManifestToken sets the SQL Server version
-                                    + N'Model" Alias="Self" annotation:UseStrongSpatialTypes="false"'
-                                    + N' xmlns:annotation="http://schemas.microsoft.com/ado/2009/02/edm/annotation" '
-                                    + N' xmlns:customannotation="http://schemas.microsoft.com/ado/2013/11/edm/customannotation"'
-                                    + N' xmlns="http://schemas.microsoft.com/ado/2009/11/edm">'
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 4)
-                                    -- We replace each line end with a line end plus extra tabs to nest code properly
-                                    + REPLACE(SUBSTRING(@csdlEntityTypes
-                                            , 1, LEN(@csdlEntityTypes) - LEN(@lineEnd)
-                                            ) -- end of SUBSTRING
-                                        , @lineEnd, @lineEnd + REPLICATE(@tab, 4)
-                                        ) -- end of REPLACE
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 4)
-                                    -- We replace each line end with a line end plus extra tabs to nest code properly
-                                    + REPLACE(SUBSTRING(@csdlAssociations
-                                            , 1, LEN(@csdlAssociations) - LEN(@lineEnd)
-                                            ) -- end of SUBSTRING
-                                        , @lineEnd, @lineEnd + REPLICATE(@tab, 4)
-                                        ) -- end of REPLACE
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 4)
-                                    + N'<EntityContainer Name="'
-                                    + @databaseName
-                                    + N'StoreContainer">'
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 5)
-                                    + REPLACE(SUBSTRING(@csdlEntitySets
-                                            , 1, LEN(@csdlEntitySets) - LEN(@lineEnd)
-                                            ) -- end of SUBSTRING
-                                        , @lineEnd, @lineEnd + REPLICATE(@tab, 5)
-                                        ) -- end of REPLACE
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 5)
-                                    + REPLACE(SUBSTRING(@csdlAssociationSets
-                                            , 1, LEN(@csdlAssociationSets) - LEN(@lineEnd)
-                                            ) -- end of SUBSTRING
-                                        , @lineEnd, @lineEnd + REPLICATE(@tab, 5)
-                                        ) -- end of REPLACE
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 4)
-                                    + N'</EntityContainer>'
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 3)
-                                    + N'</Schema>'
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 2)
-                                    + N'</edmx:ConceptualModels>'
-                                    ------------------------------------------------------------------------------
-                                    -- MSL
-                                    ------------------------------------------------------------------------------
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 2)
-                                    + N'<!-- MSL content -->'
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 2)
-                                    + N'<edmx:Mappings>'
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 3)
-                                    + N'<Mapping Space="C-S" xmlns="http://schemas.microsoft.com/ado/2009/11/mapping/cs">'
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 4)
-                                    + N'<Alias Key="store" Value="'
-                                    + @databaseName
-                                    + N'Model.Store"'
-                                    + @xmlElementClose
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 4)
-                                    + N'<Alias Key="concept" Value="'
-                                    + @databaseName
-                                    + N'Model"'
-                                    + @xmlElementClose
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 4)
-                                    + N'<EntityContainerMapping StorageEntityContainer="store_'
-                                    + @databaseName
-                                    + N'StoreContainer" CdmEntityContainer="'
-                                    + @databaseName
-                                    + N'StoreContainer">'
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 5)
-                                    + REPLACE(SUBSTRING(@mslEntitySetMappings
-                                            , 1, LEN(@mslEntitySetMappings) - LEN(@lineEnd)
-                                            ) -- end of SUBSTRING
-                                            , @lineEnd, @lineEnd + REPLICATE(@tab, 5)
-                                        ) -- end of REPLACE
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 4)
-                                    + N'</EntityContainerMapping>'
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 3)
-                                    + N'</Mapping>'
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 2)
-                                    + N'</edmx:Mappings>'
-                                    --
-                                    + @lineEnd
-                                    + @tab
-                                    + N'</edmx:Runtime>'
-                                    ------------------------------------------------------------------------------
-                                    -- Designer
-                                    ------------------------------------------------------------------------------
-                                    -- This is entirely boilerplate taken from code generated by Visual Studio
-                                    -- when using the EDM wizard.
-                                    --
-                                    + @lineEnd
-                                    + @tab
-                                    + N'<!-- EF Designer content (DO NOT EDIT MANUALLY BELOW HERE) -->'
-                                    --
-                                    + @lineEnd
-                                    + @tab
-                                    + N'<Designer xmlns="http://schemas.microsoft.com/ado/2009/11/edmx">'
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 2)
-                                    + N'<Connection>'
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 3)
-                                    + N'<DesignerInfoPropertySet>'
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 4)
-                                    + N'<DesignerProperty Name="MetadataArtifactProcessing" Value="EmbedInOutputAssembly" />'
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 3)
-                                    + N'</DesignerInfoPropertySet>'
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 2)
-                                    + N'</Connection>'
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 2)
-                                    + N'<Options>'
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 3)
-                                    + N'<DesignerInfoPropertySet>'
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 4)
-                                    + N'<DesignerProperty Name="ValidateOnBuild" Value="true" />'
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 4)
-                                    + N'<DesignerProperty Name="EnablePluralization" Value="true" />'
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 4)
-                                    + N'<DesignerProperty Name="IncludeForeignKeysInModel" Value="true" />'
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 4)
-                                    + N'<DesignerProperty Name="UseLegacyProvider" Value="false" />'
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 4)
-                                    + N'<DesignerProperty Name="CodeGenerationStrategy" Value="None" />'
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 3)
-                                    + N'</DesignerInfoPropertySet>'
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 2)
-                                    + N'</Options>'
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 2)
-                                    + N'<!-- Diagram content (shape and connector positions) -->'
-                                    --
-                                    + @lineEnd
-                                    + REPLICATE(@tab, 2)
-                                    + N'<Diagrams></Diagrams>'
-                                    --
-                                    + @lineEnd
-                                    + @tab
-                                    + N'</Designer>'
-                                    --
-                                    + @lineEnd
-                                    + N'</edmx:Edmx>'
-                                    --
-                                    + @lineEnd;
+set @emdxHeader =   N'<?xml version="1.0" encoding="utf-8"?>'
+                    --
+                    + @lineEnd
+	                + N'<edmx:Edmx Version="3.0" xmlns:edmx="http://schemas.microsoft.com/ado/2009/11/edmx">'
+                    --
+                    + @lineEnd
+	                + N'<!-- This .edmx document was automatically generated based on table definitions in '
+                    + @databaseName
+                    + N' on '
+                    + @@SERVERNAME
+                    + N' as of '
+                    + CONVERT(nvarchar(27), @executionStart, 121)
+                    + N' UTC by '
+                    + ORIGINAL_LOGIN()
+                    + N'. -->'
+                    --
+                    + @lineEnd
+                    + @tab
+	                + N'<!-- EF Runtime content -->'
+                    --
+                    + @lineEnd
+	                + @tab
+	                + N'<edmx:Runtime>'
+                                    
+------------------------------------------------------------------------------
+-- SSDL
+------------------------------------------------------------------------------
+set @ssdlContent =  @lineEnd
+                    + REPLICATE(@tab, 2)
+                    + N'<!-- SSDL content -->'
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 2)
+                    + N'<edmx:StorageModels>'
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 3)
+                    + N'<Schema Namespace="'
+                    + @databaseName
+                    -- ProviderManifestToken sets the SQL Server version
+                    + N'Model.Store" Provider="System.Data.SqlClient" ProviderManifestToken="'
+                    + @sqlServerVersionToken
+                    + '" Alias="Self"'
+                    + N' xmlns:store="http://schemas.microsoft.com/ado/2007/12/edm/EntityStoreSchemaGenerator"'
+                    + N' xmlns:customannotation="http://schemas.microsoft.com/ado/2013/11/edm/customannotation"'
+                    + N' xmlns="http://schemas.microsoft.com/ado/2009/11/edm/ssdl">'
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 4)
+                    -- We replace each line end with a line end plus extra tabs to nest code properly
+                    + REPLACE(SUBSTRING(@ssdlEntityTypes
+                            , 1, LEN(@ssdlEntityTypes) - LEN(@lineEnd)
+                            ) -- end of SUBSTRING
+                        , @lineEnd, @lineEnd + REPLICATE(@tab, 4)
+                        ) -- end of REPLACE
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 4)
+                    + N'<EntityContainer Name="store_'
+                    + @databaseName
+                    + N'StoreContainer">'
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 5)
+                    + REPLACE(SUBSTRING(@ssdlEntitySets
+                            , 1, LEN(@ssdlEntitySets) - LEN(@lineEnd)
+                            ) -- end of SUBSTRING
+                        , @lineEnd, @lineEnd + REPLICATE(@tab, 5)
+                        ) -- end of REPLACE
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 4)
+                    + N'</EntityContainer>'
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 4)
+                    -- Using a placeholder to deal with length issues
+                    + @ssdlFunctionToken
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 3)
+                    + N'</Schema>'
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 2)
+                    + N'</edmx:StorageModels>';
+                                    
+------------------------------------------------------------------------------
+-- CSDL
+------------------------------------------------------------------------------
+set @csdlContent =  @lineEnd
+                    + REPLICATE(@tab, 2)
+                    + N'<!-- CSDL content -->'
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 2)
+                    + N'<edmx:ConceptualModels>'
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 3)
+                    + N'<Schema Namespace="'
+                    + @databaseName
+                    -- ProviderManifestToken sets the SQL Server version
+                    + N'Model" Alias="Self" annotation:UseStrongSpatialTypes="false"'
+                    + N' xmlns:annotation="http://schemas.microsoft.com/ado/2009/02/edm/annotation" '
+                    + N' xmlns:customannotation="http://schemas.microsoft.com/ado/2013/11/edm/customannotation"'
+                    + N' xmlns="http://schemas.microsoft.com/ado/2009/11/edm">'
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 4)
+                    -- We replace each line end with a line end plus extra tabs to nest code properly
+                    + REPLACE(SUBSTRING(@csdlEntityTypes
+                            , 1, LEN(@csdlEntityTypes) - LEN(@lineEnd)
+                            ) -- end of SUBSTRING
+                        , @lineEnd, @lineEnd + REPLICATE(@tab, 4)
+                        ) -- end of REPLACE
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 4)
+                    -- We replace each line end with a line end plus extra tabs to nest code properly
+                    + REPLACE(SUBSTRING(@csdlAssociations
+                            , 1, LEN(@csdlAssociations) - LEN(@lineEnd)
+                            ) -- end of SUBSTRING
+                        , @lineEnd, @lineEnd + REPLICATE(@tab, 4)
+                        ) -- end of REPLACE
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 4)
+                    + N'<EntityContainer Name="'
+                    + @databaseName
+                    + N'StoreContainer">'
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 5)
+                    + REPLACE(SUBSTRING(@csdlEntitySets
+                            , 1, LEN(@csdlEntitySets) - LEN(@lineEnd)
+                            ) -- end of SUBSTRING
+                        , @lineEnd, @lineEnd + REPLICATE(@tab, 5)
+                        ) -- end of REPLACE
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 5)
+                    + REPLACE(SUBSTRING(@csdlAssociationSets
+                            , 1, LEN(@csdlAssociationSets) - LEN(@lineEnd)
+                            ) -- end of SUBSTRING
+                        , @lineEnd, @lineEnd + REPLICATE(@tab, 5)
+                        ) -- end of REPLACE
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 4)
+                    + N'</EntityContainer>'
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 3)
+                    + N'</Schema>'
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 2)
+                    + N'</edmx:ConceptualModels>';
+                                    
+------------------------------------------------------------------------------
+-- MSL
+------------------------------------------------------------------------------
+set @mslContent =   @lineEnd
+                    + REPLICATE(@tab, 2)
+                    + N'<!-- MSL content -->'
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 2)
+                    + N'<edmx:Mappings>'
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 3)
+                    + N'<Mapping Space="C-S" xmlns="http://schemas.microsoft.com/ado/2009/11/mapping/cs">'
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 4)
+                    + N'<Alias Key="store" Value="'
+                    + @databaseName
+                    + N'Model.Store"'
+                    + @xmlElementClose
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 4)
+                    + N'<Alias Key="concept" Value="'
+                    + @databaseName
+                    + N'Model"'
+                    + @xmlElementClose
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 4)
+                    + N'<EntityContainerMapping StorageEntityContainer="store_'
+                    + @databaseName
+                    + N'StoreContainer" CdmEntityContainer="'
+                    + @databaseName
+                    + N'StoreContainer">'
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 5)
+                    + REPLACE(SUBSTRING(@mslEntitySetMappings
+                            , 1, LEN(@mslEntitySetMappings) - LEN(@lineEnd)
+                            ) -- end of SUBSTRING
+                            , @lineEnd, @lineEnd + REPLICATE(@tab, 5)
+                        ) -- end of REPLACE
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 4)
+                    + N'</EntityContainerMapping>'
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 3)
+                    + N'</Mapping>'
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 2)
+                    + N'</edmx:Mappings>';
+                                    
+set @edmxFooter =   @lineEnd
+                    + @tab
+                    + N'</edmx:Runtime>'
+                    ------------------------------------------------------------------------------
+                    -- Designer
+                    ------------------------------------------------------------------------------
+                    -- This is entirely boilerplate taken from code generated by Visual Studio
+                    -- when using the EDM wizard.
+                    --
+                    + @lineEnd
+                    + @tab
+                    + N'<!-- EF Designer content (DO NOT EDIT MANUALLY BELOW HERE) -->'
+                    --
+                    + @lineEnd
+                    + @tab
+                    + N'<Designer xmlns="http://schemas.microsoft.com/ado/2009/11/edmx">'
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 2)
+                    + N'<Connection>'
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 3)
+                    + N'<DesignerInfoPropertySet>'
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 4)
+                    + N'<DesignerProperty Name="MetadataArtifactProcessing" Value="EmbedInOutputAssembly" />'
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 3)
+                    + N'</DesignerInfoPropertySet>'
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 2)
+                    + N'</Connection>'
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 2)
+                    + N'<Options>'
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 3)
+                    + N'<DesignerInfoPropertySet>'
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 4)
+                    + N'<DesignerProperty Name="ValidateOnBuild" Value="true" />'
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 4)
+                    + N'<DesignerProperty Name="EnablePluralization" Value="true" />'
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 4)
+                    + N'<DesignerProperty Name="IncludeForeignKeysInModel" Value="true" />'
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 4)
+                    + N'<DesignerProperty Name="UseLegacyProvider" Value="false" />'
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 4)
+                    + N'<DesignerProperty Name="CodeGenerationStrategy" Value="None" />'
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 3)
+                    + N'</DesignerInfoPropertySet>'
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 2)
+                    + N'</Options>'
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 2)
+                    + N'<!-- Diagram content (shape and connector positions) -->'
+                    --
+                    + @lineEnd
+                    + REPLICATE(@tab, 2)
+                    + N'<Diagrams></Diagrams>'
+                    --
+                    + @lineEnd
+                    + @tab
+                    + N'</Designer>'
+                    --
+                    + @lineEnd
+                    + N'</edmx:Edmx>'
+                    --
+                    + @lineEnd;
 
-if @debugMode = CAST(1 as bit)
-begin;
-    select  [ssdlEntityContainer]    = @ssdlEntityContainer,
-            [csdlEntityContainer]    = @csdlEntityContainer;
-end;
+-- Assemble .edmx content
+-- This is probably going to be too long to return via PRINT or SELECT statement, but just in case, we put it all
+-- together.
+set @edmxPresentationStatement =    @emdxHeader
+                                    -- This puts the SSDL functions into the SSDL content, nested at the proper
+                                    -- depth.
+                                    + REPLACE(  @ssdlContent,
+                                                @ssdlFunctionToken,
+                                                REPLACE(SUBSTRING(@ssdlFunctions
+                                                        , 1, LEN(@ssdlFunctions) - LEN(@lineEnd)
+                                                        )
+                                                    , @lineEnd, @lineEnd + REPLICATE(@tab, 4)
+                                                    )
+                                                )
+                                    + @csdlContent
+                                    + @mslContent
+                                    + @edmxFooter;
 
 --////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 -- Present code
 --\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 
-select  [crudObjectCreationStatements]  = @crudPresentationStatement,
-        [edmxPresentationStatement]     = @edmxPresentationStatement;
+select N'!!!VERIFY THAT THE edmxPresentationStatement IS COMPLETE BEFORE USING!!!'
+
+-- Going to try a little wizardry to get the full .edmx to return without totally borking the session settings...
+declare @edmxTextLength     bigint  = LEN(@edmxPresentationStatement);
+
+-- While the SSMS Query settings should allow for return of up to 65,535 characters in a given result cell,
+-- practice indicates this tops out at 43,679 characters for an nvarchar(max) field. If the .edmx content is going
+-- to be longer than that, we are going to want to present it for manual assembly.
+if @edmxTextLength <= 43679
+begin;
+
+    select  [crudObjectCreationStatements]  = @crudPresentationStatement,
+            [edmxPresentationStatement]     = @edmxPresentationStatement;
+
+    select N'Here are the components of the .edmx file:'
+
+    select  [edmxHeader]                    = @emdxHeader,
+            [ssdlContent]                   = @ssdlContent,
+            [ssdlFunctions]                 = REPLACE(SUBSTRING(@ssdlFunctions
+                                                    , 1, LEN(@ssdlFunctions) - LEN(@lineEnd)
+                                                    )
+                                                , @lineEnd, @lineEnd + REPLICATE(@tab, 4)
+                                                ),
+            [csdlContent]                   = @csdlContent,
+            [mslContent]                    = @mslContent,
+            [edmxFooter]                    = @edmxFooter
+            ;
+end;
+else begin;
+    select N'It is almost certain that the .edmx file content is too long to be returned as one item, so instead its components are provided for manual assembly.'
+    
+    select  [crudObjectCreationStatements]  = @crudPresentationStatement,
+            [edmxPresentationStatement]     = @edmxPresentationStatement,
+            [edmxHeader]                    = @emdxHeader,
+            [ssdlContent]                   = @ssdlContent,
+            [ssdlFunctions]                 = REPLACE(SUBSTRING(@ssdlFunctions
+                                                    , 1, LEN(@ssdlFunctions) - LEN(@lineEnd)
+                                                    )
+                                                , @lineEnd, @lineEnd + REPLICATE(@tab, 4)
+                                                ),
+            [csdlContent]                   = @csdlContent,
+            [mslContent]                    = @mslContent,
+            [edmxFooter]                    = @edmxFooter
+            ;
+end;
+
 
 if @debugMode = CAST(1 as bit)
 begin;
