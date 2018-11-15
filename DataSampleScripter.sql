@@ -23,7 +23,7 @@ insert @tableListSubmitted ( schemaQualifiedObjectName )
 -- Add all the tables for which you'd like to generate scripts as ( 'schemaName.tableName' )
 --                                                             or ( '[schemaName].[tableName]' )
 --!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-values	('RVW.eddsUser')
+values	('staging.VendorPart')
 --!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 --!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
@@ -43,8 +43,8 @@ declare	@objectId					int,
         @userTypeName				nvarchar(128), -- including to prevent need for lookups in nested cursor
         @isNullable					bit,
         @columnNumber				int,
-        @lineEnd					nchar(2)		= CHAR(13) + CHAR(10),
-        @tab						nchar(1)		= CHAR(9),
+        @lineEnd					nchar(2)		= NCHAR(13) + NCHAR(10),
+        @tab						nchar(1)		= NCHAR(9),
         @commaDelimiter				nchar(7)		= N'+ N'', ''',
         @nFrontQuote				nchar(9)		= N'N''N'''''' + ', -- for leading unicode string columns
         @frontQuote					nchar(8)		= N'N'''''''' + ', -- for leading ASCII and hexadecimal string columns
@@ -240,7 +240,7 @@ begin;
                                                 quotedSchemaQualifiedName desc
                                     for xml path ('')
                                 ), 1, 7, N'' -- end of STUFF
-                            ), N'&#x0D;', N'' -- replaces extra line end characters added by FOR XML
+                            ), N'&#x0D;', NCHAR(13) -- replaces carriage return
                          ) as deleteStatementsForTableSet;
         
     end;
@@ -374,7 +374,7 @@ begin;
                                                                 foreign_keys.[object_id]
                                                     for xml path('')
                                                 ), 1, 0, N'' -- end of STUFF, nothing is stuffed
-                                            ), N'&#x0D;', N'' -- replaces extra line end characters added by FOR XML
+                                            ), N'&#x0D;', NCHAR(13) -- replaces carriage return
                                         );
 
         -- Add a final line end
